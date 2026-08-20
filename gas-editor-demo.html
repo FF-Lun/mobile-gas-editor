@@ -93,6 +93,12 @@
     <button id="wrapToggle">自動換行:開</button>
   </div>
 
+  <div id="topbar" style="border-top:1px solid #3c3c3c;">
+    <select id="funcSelect">
+      <option value="">— 選取函式區塊 —</option>
+    </select>
+  </div>
+
   <div id="searchbar">
     <input id="findInput" placeholder="搜尋..." autocapitalize="off" autocorrect="off" spellcheck="false">
     <input id="replaceInput" placeholder="取代為..." autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -118,7 +124,7 @@ import { EditorState } from "https://esm.sh/@codemirror/state@6";
 import { defaultKeymap, history, historyKeymap } from "https://esm.sh/@codemirror/commands@6";
 import { javascript } from "https://esm.sh/@codemirror/lang-javascript@6";
 import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6";
-import { bracketMatching, foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle } from "https://esm.sh/@codemirror/language@6";
+import { bracketMatching, foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle, syntaxTree } from "https://esm.sh/@codemirror/language@6";
 import { search, searchKeymap, replaceAll as cmReplaceAll, setSearchQuery, SearchQuery } from "https://esm.sh/@codemirror/search@6";
 
 const fakeCode = `/**
@@ -180,6 +186,23 @@ function exportAsPdf() {
   const blob = response.getBlob().setName('時程表.pdf');
   DriveApp.createFile(blob);
 }
+
+// 箭頭函式寫法範例，測試擴充後的掃描功能
+const notifyDelayedTasks = () => {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('WBS');
+  const today = new Date();
+  const delayed = sheet.getDataRange().getValues().filter(row => {
+    return row[3] && new Date(row[3]) < today && row[6] !== '已完成';
+  });
+
+  if (delayed.length > 0) {
+    MailApp.sendEmail('team@example.com', '進度延遲提醒', `有 ${delayed.length} 項工作已延遲`);
+  }
+};
+
+const formatCurrency = function(amount) {
+  return 'NT$' + amount.toLocaleString('zh-TW');
+};
 `;
 
 let wrapEnabled = true;
@@ -271,6 +294,70 @@ document.getElementById("replaceAllBtn").addEventListener("click", () => {
 
 document.getElementById("sheetSelect").addEventListener("change", () => toast("（示意）已切換試算表"));
 document.getElementById("fileSelect").addEventListener("change", () => toast("（示意）已切換檔案"));
+
+// --- 函式區塊選取功能 ---
+let functionRanges = [];
+
+function scanFunctions() {
+  const tree = syntaxTree(view.state);
+  const results = [];
+  let cursor = tree.topNode.cursor();
+  if (cursor.firstChild()) {
+    do {
+      if (cursor.type.name === "FunctionDeclaration") {
+        const node = cursor.node;
+        const nameNode = node.getChild("VariableDefinition");
+        const name = nameNode
+          ? view.state.doc.sliceString(nameNode.from, nameNode.to)
+          : "(匿名函式)";
+        const startLine = view.state.doc.lineAt(node.from).number;
+        results.push({ name, from: node.from, to: node.to, startLine });
+      } else if (cursor.type.name === "VariableDeclaration") {
+        // 抓 const/let/var x = () => {} 或 const/let/var x = function() {} 這兩種寫法
+        const node = cursor.node;
+        const nameNode = node.getChild("VariableDefinition");
+        const funcNode = node.getChild("ArrowFunction") || node.getChild("FunctionExpression");
+        if (nameNode && funcNode) {
+          const name = view.state.doc.sliceString(nameNode.from, nameNode.to);
+          const startLine = view.state.doc.lineAt(node.from).number;
+          results.push({ name, from: node.from, to: node.to, startLine });
+        }
+      }
+    } while (cursor.nextSibling());
+  }
+  // 依行號排序，符合閱讀順序
+  results.sort((a, b) => a.startLine - b.startLine);
+  functionRanges = results;
+
+  const sel = document.getElementById("funcSelect");
+  sel.innerHTML = '<option value="">— 選取函式區塊 —</option>';
+  results.forEach((r, i) => {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = `function ${r.name}()  第 ${r.startLine} 行`;
+    sel.appendChild(opt);
+  });
+}
+
+document.getElementById("funcSelect").addEventListener("change", (e) => {
+  const idx = e.target.value;
+  if (idx === "") return;
+  const r = functionRanges[idx];
+  view.dispatch({
+    selection: { anchor: r.from, head: r.to },
+    scrollIntoView: true
+  });
+  view.focus();
+  toast(`已選取 ${r.name}() 整個函式，可直接輸入或貼上取代`);
+});
+
+scanFunctions();
+// 每次編輯內容後重新掃描（debounce 避免過於頻繁）
+let scanTimer;
+view.dom.addEventListener("input", () => {
+  clearTimeout(scanTimer);
+  scanTimer = setTimeout(scanFunctions, 800);
+});
 </script>
 </body>
 </html>
