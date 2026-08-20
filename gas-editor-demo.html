@@ -75,9 +75,16 @@
     white-space: nowrap;
   }
   #toast.show { opacity: 1; }
+  #errorBox {
+    display: none; position: fixed; top: 0; left: 0; right: 0;
+    background: #5c1e1e; color: #ffcdcd; padding: 10px; font-size: 12px;
+    z-index: 999; white-space: pre-wrap; word-break: break-all;
+    max-height: 40vh; overflow: auto;
+  }
 </style>
 </head>
 <body>
+<div id="errorBox"></div>
 <div id="app">
   <div id="topbar">
     <select id="sheetSelect">
@@ -118,14 +125,26 @@
 </div>
 <div id="toast"></div>
 
+<script>
+window.addEventListener("error", (e) => {
+  const box = document.getElementById("errorBox");
+  box.style.display = "block";
+  box.textContent = "載入錯誤:\n" + (e.message || e.error) + "\n" + (e.filename ? e.filename + ":" + e.lineno : "");
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const box = document.getElementById("errorBox");
+  box.style.display = "block";
+  box.textContent = "載入錯誤(Promise):\n" + (e.reason && e.reason.message ? e.reason.message : e.reason);
+});
+</script>
 <script type="module">
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from "https://esm.sh/@codemirror/view@6";
-import { EditorState } from "https://esm.sh/@codemirror/state@6";
-import { defaultKeymap, history, historyKeymap } from "https://esm.sh/@codemirror/commands@6";
-import { javascript } from "https://esm.sh/@codemirror/lang-javascript@6";
-import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6";
-import { bracketMatching, foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle, syntaxTree, ensureSyntaxTree } from "https://esm.sh/@codemirror/language@6";
-import { search, searchKeymap, replaceAll as cmReplaceAll, setSearchQuery, SearchQuery } from "https://esm.sh/@codemirror/search@6";
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from "https://esm.sh/@codemirror/[email protected]?deps=@codemirror/[email protected]";
+import { EditorState, Compartment } from "https://esm.sh/@codemirror/[email protected]";
+import { defaultKeymap, history, historyKeymap } from "https://esm.sh/@codemirror/[email protected]?deps=@codemirror/[email protected],@codemirror/[email protected],@codemirror/[email protected]";
+import { javascript } from "https://esm.sh/@codemirror/[email protected]?deps=@codemirror/[email protected],@codemirror/[email protected],@codemirror/[email protected]";
+import { oneDark } from "https://esm.sh/@codemirror/[email protected]?deps=@codemirror/[email protected],@codemirror/[email protected],@codemirror/[email protected]";
+import { bracketMatching, foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle, syntaxTree, ensureSyntaxTree } from "https://esm.sh/@codemirror/[email protected]?deps=@codemirror/[email protected],@codemirror/[email protected]";
+import { search, searchKeymap } from "https://esm.sh/@codemirror/[email protected]?deps=@codemirror/[email protected],@codemirror/[email protected]";
 
 const fakeCode = `/**
  * 假資料範例 — 業務時程管理表 GAS 專案
@@ -206,7 +225,7 @@ const formatCurrency = function(amount) {
 `;
 
 let wrapEnabled = true;
-const wrapCompartment = new (await import("https://esm.sh/@codemirror/state@6")).Compartment();
+const wrapCompartment = new Compartment();
 
 let scanTimer;
 const state = EditorState.create({
