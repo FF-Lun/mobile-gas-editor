@@ -117,7 +117,7 @@
 
   <div id="bottombar">
     <button id="selectAllBtn">全選</button>
-    <button id="pasteBtn">貼上覆蓋</button>
+    <button id="pasteBtn">貼上</button>
     <button id="saveBtn" class="primary">存檔</button>
     <button id="versionBtn">建立新版本</button>
     <button id="deployBtn" class="deploy">更新部署</button>
@@ -322,10 +322,20 @@ document.getElementById("selectAllBtn").addEventListener("click", () => {
 document.getElementById("pasteBtn").addEventListener("click", async () => {
   try {
     const text = await navigator.clipboard.readText();
-    view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: text }
-    });
-    toast("已貼上覆蓋");
+    const sel = view.state.selection.main;
+    if (!sel.empty) {
+      // 有選取範圍（例如剛用「選取函式區塊」選了一個函式）→ 只取代選取的部分
+      view.dispatch({
+        changes: { from: sel.from, to: sel.to, insert: text }
+      });
+      toast("已貼上，取代選取的範圍");
+    } else {
+      // 沒有選取任何東西 → 視為整份覆蓋
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text }
+      });
+      toast("已貼上覆蓋整份檔案");
+    }
   } catch (err) {
     toast("此環境不支援直接讀取剪貼簿，請長按貼上");
   }
