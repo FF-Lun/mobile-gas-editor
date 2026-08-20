@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>手機版 GAS 編輯器 - 體驗原型</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1e1e1e; color: #d4d4d4;
+    overflow: hidden;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+  /* 上方選單列 */
+  #topbar {
+    display: flex; gap: 6px; padding: 8px 10px;
+    background: #2d2d30; border-bottom: 1px solid #3c3c3c;
+    flex-shrink: 0;
+  }
+  select {
+    flex: 1; min-width: 0;
+    background: #3c3c3c; color: #d4d4d4; border: 1px solid #555;
+    border-radius: 6px; padding: 8px 6px; font-size: 13px;
+  }
+  #wrapToggle {
+    background: #3c3c3c; color: #9cdcfe; border: 1px solid #555;
+    border-radius: 6px; padding: 8px 10px; font-size: 12px; white-space: nowrap;
+  }
+
+  /* 搜尋/取代列 */
+  #searchbar {
+    display: flex; gap: 6px; padding: 6px 10px;
+    background: #252526; border-bottom: 1px solid #3c3c3c;
+    flex-shrink: 0;
+  }
+  #searchbar input {
+    flex: 1; min-width: 0; background: #3c3c3c; color: #d4d4d4;
+    border: 1px solid #555; border-radius: 6px; padding: 7px 8px; font-size: 13px;
+  }
+  #searchbar button {
+    background: #0e639c; color: white; border: none; border-radius: 6px;
+    padding: 7px 10px; font-size: 12px; white-space: nowrap;
+  }
+  #searchStatus { font-size: 11px; color: #888; padding: 2px 10px; flex-shrink:0; background:#252526; }
+
+  /* 編輯區 */
+  #editor-container {
+    flex: 1; min-height: 0; overflow: auto;
+    font-size: 14px;
+  }
+  .cm-editor { height: 100%; }
+  .cm-scroller { font-family: "SF Mono", Menlo, Consolas, monospace !important; }
+
+  /* 底部功能列 */
+  #bottombar {
+    display: flex; gap: 6px; padding: 8px 10px;
+    background: #2d2d30; border-top: 1px solid #3c3c3c;
+    flex-shrink: 0; overflow-x: auto;
+  }
+  #bottombar button {
+    flex: 1; min-width: 68px;
+    background: #3c3c3c; color: #d4d4d4; border: 1px solid #555;
+    border-radius: 6px; padding: 10px 4px; font-size: 12px;
+  }
+  #bottombar button.primary { background: #0e639c; color: white; border-color: #0e639c; }
+  #bottombar button.deploy { background: #2e7d32; color: white; border-color: #2e7d32; }
+
+  #toast {
+    position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
+    background: #333; color: #fff; padding: 8px 16px; border-radius: 20px;
+    font-size: 12px; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    white-space: nowrap;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <select id="sheetSelect">
+      <option>📊 業務時程管理表</option>
+      <option>📊 IND 文件索引</option>
+      <option>📊 Phase 2 觀察員</option>
+    </select>
+    <select id="fileSelect">
+      <option>Code.gs</option>
+      <option>Index.html</option>
+      <option>Utils.gs</option>
+    </select>
+    <button id="wrapToggle">自動換行:開</button>
+  </div>
+
+  <div id="searchbar">
+    <input id="findInput" placeholder="搜尋..." autocapitalize="off" autocorrect="off" spellcheck="false">
+    <input id="replaceInput" placeholder="取代為..." autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button id="replaceAllBtn">全部取代</button>
+  </div>
+  <div id="searchStatus">點大括號 { } 或小括號 ( ) 試試看區塊選取</div>
+
+  <div id="editor-container"></div>
+
+  <div id="bottombar">
+    <button id="selectAllBtn">全選</button>
+    <button id="pasteBtn">貼上覆蓋</button>
+    <button id="saveBtn" class="primary">存檔</button>
+    <button id="versionBtn">建立新版本</button>
+    <button id="deployBtn" class="deploy">更新部署</button>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script type="module">
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from "https://esm.sh/@codemirror/view@6";
+import { EditorState } from "https://esm.sh/@codemirror/state@6";
+import { defaultKeymap, history, historyKeymap } from "https://esm.sh/@codemirror/commands@6";
+import { javascript } from "https://esm.sh/@codemirror/lang-javascript@6";
+import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6";
+import { bracketMatching, foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle } from "https://esm.sh/@codemirror/language@6";
+import { search, searchKeymap, replaceAll as cmReplaceAll, setSearchQuery, SearchQuery } from "https://esm.sh/@codemirror/search@6";
+
+const fakeCode = `/**
+ * 假資料範例 — 業務時程管理表 GAS 專案
+ * 這是體驗原型，不連接任何真實 Google 帳號或專案
+ */
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('時程工具')
+    .addItem('重新整理甘特圖', 'refreshGanttChart')
+    .addItem('匯出為 PDF', 'exportAsPdf')
+    .addToUi();
+}
+
+function refreshGanttChart() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('WBS');
+  const range = sheet.getDataRange();
+  const values = range.getValues();
+
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const startDate = row[2];
+    const endDate = row[3];
+
+    if (startDate && endDate) {
+      const duration = calculateWorkDays(startDate, endDate);
+      sheet.getRange(i + 1, 5).setValue(duration);
+    }
+  }
+
+  SpreadsheetApp.getActiveSpreadsheet().toast('甘特圖已更新', '完成', 3);
+}
+
+function calculateWorkDays(start, end) {
+  let count = 0;
+  const cur = new Date(start);
+
+  while (cur <= end) {
+    const day = cur.getDay();
+    if (day !== 0 && day !== 6) {
+      count++;
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  return count;
+}
+
+function exportAsPdf() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const url = ss.getUrl().replace(/edit.*$/, '') +
+    'export?format=pdf&size=A4&portrait=true';
+
+  const token = ScriptApp.getOAuthToken();
+  const response = UrlFetchApp.fetch(url, {
+    headers: { Authorization: 'Bearer ' + token }
+  });
+
+  const blob = response.getBlob().setName('時程表.pdf');
+  DriveApp.createFile(blob);
+}
+`;
+
+let wrapEnabled = true;
+const wrapCompartment = new (await import("https://esm.sh/@codemirror/state@6")).Compartment();
+
+const state = EditorState.create({
+  doc: fakeCode,
+  extensions: [
+    lineNumbers(),
+    highlightActiveLine(),
+    highlightActiveLineGutter(),
+    history(),
+    bracketMatching(),
+    foldGutter(),
+    indentOnInput(),
+    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    javascript(),
+    oneDark,
+    search(),
+    wrapCompartment.of(EditorView.lineWrapping),
+    keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+    EditorView.theme({
+      "&": { fontSize: "14px" },
+      ".cm-content": { padding: "8px 0" },
+      ".cm-gutters": { backgroundColor: "#252526", color: "#6e7681" }
+    })
+  ]
+});
+
+const view = new EditorView({
+  state,
+  parent: document.getElementById("editor-container")
+});
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(() => t.classList.remove("show"), 1500);
+}
+
+document.getElementById("wrapToggle").addEventListener("click", (e) => {
+  wrapEnabled = !wrapEnabled;
+  view.dispatch({
+    effects: wrapCompartment.reconfigure(wrapEnabled ? EditorView.lineWrapping : [])
+  });
+  e.target.textContent = wrapEnabled ? "自動換行:開" : "自動換行:關";
+});
+
+document.getElementById("selectAllBtn").addEventListener("click", () => {
+  view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
+  view.focus();
+  toast("已全選");
+});
+
+document.getElementById("pasteBtn").addEventListener("click", async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: text }
+    });
+    toast("已貼上覆蓋");
+  } catch (err) {
+    toast("此環境不支援直接讀取剪貼簿，請長按貼上");
+  }
+});
+
+document.getElementById("saveBtn").addEventListener("click", () => {
+  toast("💾 存檔（示意，未連接真實專案）");
+});
+document.getElementById("versionBtn").addEventListener("click", () => {
+  toast("🏷️ 已建立新版本（示意）");
+});
+document.getElementById("deployBtn").addEventListener("click", () => {
+  toast("🚀 部署已更新（示意）");
+});
+
+document.getElementById("replaceAllBtn").addEventListener("click", () => {
+  const find = document.getElementById("findInput").value;
+  const replace = document.getElementById("replaceInput").value;
+  if (!find) { toast("請輸入搜尋內容"); return; }
+  const doc = view.state.doc.toString();
+  const count = doc.split(find).length - 1;
+  const newDoc = doc.split(find).join(replace);
+  view.dispatch({ changes: { from: 0, to: doc.length, insert: newDoc } });
+  toast(`已取代 ${count} 處`);
+});
+
+document.getElementById("sheetSelect").addEventListener("change", () => toast("（示意）已切換試算表"));
+document.getElementById("fileSelect").addEventListener("change", () => toast("（示意）已切換檔案"));
+</script>
+</body>
+</html>
