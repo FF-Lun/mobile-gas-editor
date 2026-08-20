@@ -215,7 +215,7 @@ const notifyDelayedTasks = () => {
   });
 
   if (delayed.length > 0) {
-    MailApp.sendEmail('team@example.com', '進度延遲提醒', `有 ${delayed.length} 項工作已延遲`);
+    MailApp.sendEmail('team@example.com', '進度延遲提醒', \`有 \${delayed.length} 項工作已延遲\`);
   }
 };
 
