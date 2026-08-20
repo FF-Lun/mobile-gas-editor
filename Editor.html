@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>手機版 GAS 編輯器</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1e1e1e; color: #d4d4d4;
+    overflow: hidden;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+  #topbar {
+    display: flex; gap: 6px; padding: 8px 10px;
+    background: #2d2d30; border-bottom: 1px solid #3c3c3c;
+    flex-shrink: 0;
+  }
+  select {
+    flex: 1; min-width: 0;
+    background: #3c3c3c; color: #d4d4d4; border: 1px solid #555;
+    border-radius: 6px; padding: 8px 6px; font-size: 13px;
+  }
+  #topbar button, #funcbar button {
+    background: #3c3c3c; color: #9cdcfe; border: 1px solid #555;
+    border-radius: 6px; padding: 8px 10px; font-size: 12px; white-space: nowrap;
+  }
+
+  #funcbar {
+    display: flex; gap: 6px; padding: 6px 10px;
+    background: #2d2d30; border-bottom: 1px solid #3c3c3c; flex-shrink: 0;
+  }
+
+  #searchbar {
+    display: flex; gap: 6px; padding: 6px 10px;
+    background: #252526; border-bottom: 1px solid #3c3c3c;
+    flex-shrink: 0;
+  }
+  #searchbar input {
+    flex: 1; min-width: 0; background: #3c3c3c; color: #d4d4d4;
+    border: 1px solid #555; border-radius: 6px; padding: 7px 8px; font-size: 13px;
+  }
+  #searchbar button {
+    background: #0e639c; color: white; border: none; border-radius: 6px;
+    padding: 7px 10px; font-size: 12px; white-space: nowrap;
+  }
+  #statusLine { font-size: 11px; color: #888; padding: 2px 10px; flex-shrink:0; background:#252526; }
+
+  #editor-container { flex: 1; min-height: 0; overflow: auto; font-size: 14px; }
+  .cm-editor { height: 100%; }
+  .cm-scroller { font-family: "SF Mono", Menlo, Consolas, monospace !important; }
+
+  #bottombar {
+    display: flex; gap: 6px; padding: 8px 10px;
+    background: #2d2d30; border-top: 1px solid #3c3c3c;
+    flex-shrink: 0; overflow-x: auto;
+  }
+  #bottombar button {
+    flex: 1; min-width: 68px;
+    background: #3c3c3c; color: #d4d4d4; border: 1px solid #555;
+    border-radius: 6px; padding: 10px 4px; font-size: 12px;
+  }
+  #bottombar button.primary { background: #0e639c; color: white; border-color: #0e639c; }
+  #bottombar button.version { background: #b8860b; color: white; border-color: #b8860b; }
+  #bottombar button.deploy { background: #2e7d32; color: white; border-color: #2e7d32; }
+
+  #toast {
+    position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%);
+    background: #333; color: #fff; padding: 8px 16px; border-radius: 20px;
+    font-size: 12px; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+  }
+  #toast.show { opacity: 1; }
+
+  #errorBox {
+    display: none; position: fixed; top: 0; left: 0; right: 0;
+    background: #5c1e1e; color: #ffcdcd; padding: 10px; font-size: 12px;
+    z-index: 999; white-space: pre-wrap; word-break: break-all;
+    max-height: 40vh; overflow: auto;
+  }
+  #loadingOverlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    z-index: 998; align-items: center; justify-content: center; color: #fff; font-size: 14px;
+  }
+  #pickerOverlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    z-index: 1000; align-items: flex-end; justify-content: center;
+  }
+  #pickerSheet {
+    background: #2d2d30; width: 100%; max-height: 75vh; border-radius: 12px 12px 0 0;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #pickerTitle {
+    padding: 14px 16px; font-size: 14px; font-weight: bold; color: #fff;
+    border-bottom: 1px solid #3c3c3c; flex-shrink: 0;
+  }
+  #pickerList { overflow-y: auto; flex: 1; }
+  #pickerList button {
+    display: block; width: 100%; text-align: left; background: none; border: none;
+    border-bottom: 1px solid #3c3c3c; color: #d4d4d4; padding: 12px 16px; font-size: 13px;
+  }
+  #pickerList button:active { background: #3c3c3c; }
+  #pickerList .ver { color: #9cdcfe; float: right; }
+  #pickerCancel {
+    padding: 12px 16px; background: #3c3c3c; color: #ffcdcd; border: none;
+    font-size: 13px; flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+<div id="errorBox"></div>
+<div id="loadingOverlay">處理中…</div>
+<div id="pickerOverlay">
+  <div id="pickerSheet">
+    <div id="pickerTitle"></div>
+    <div id="pickerList"></div>
+    <button id="pickerCancel">取消</button>
+  </div>
+</div>
+
+<div id="app">
+  <div id="topbar">
+    <select id="projectSelect"><option value="">— 選擇試算表/專案 —</option></select>
+    <button id="renameProjectBtn">改名</button>
+    <button id="deleteProjectBtn">刪除</button>
+    <button id="addProjectBtn">＋新增</button>
+  </div>
+  <div id="topbar" style="border-top:1px solid #3c3c3c;">
+    <select id="fileSelect" disabled><option value="">— 選擇檔案 —</option></select>
+  </div>
+
+  <div id="funcbar">
+    <select id="funcSelect" disabled><option value="">— 選取函式區塊 —</option></select>
+    <button id="statusBtn">部署狀態</button>
+  </div>
+
+  <div id="searchbar">
+    <input id="findInput" placeholder="搜尋..." autocapitalize="off" autocorrect="off" spellcheck="false">
+    <input id="replaceInput" placeholder="取代為..." autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button id="replaceAllBtn">全部取代</button>
+  </div>
+  <div id="statusLine">尚未載入檔案</div>
+
+  <div id="editor-container"></div>
+
+  <div id="bottombar">
+    <button id="selectAllBtn">全選</button>
+    <button id="pasteBtn">貼上</button>
+    <button id="saveBtn" class="primary">存檔</button>
+    <button id="versionBtn" class="version">建立新版本</button>
+    <button id="changeTargetBtn" style="flex:0.6; min-width:52px; background:#3c3c3c; color:#d4d4d4; border:1px solid #555; border-radius:6px; font-size:11px;">改目標</button>
+    <button id="deployBtn" class="deploy">更新部署</button>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+window.addEventListener("error", function (e) {
+  showError("載入錯誤：\n" + (e.message || e.error) + "\n" + (e.filename ? e.filename + ":" + e.lineno : ""));
+});
+window.addEventListener("unhandledrejection", function (e) {
+  showError("錯誤：\n" + (e.reason && e.reason.message ? e.reason.message : e.reason));
+});
+function showError(text) {
+  const box = document.getElementById("errorBox");
+  box.style.display = "block";
+  box.textContent = text;
+}
+function showLoading(on) {
+  document.getElementById("loadingOverlay").style.display = on ? "flex" : "none";
+}
+
+// 手指點選清單，取代不可靠的 prompt() 輸入框
+function showPicker(title, items, labelFn) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("pickerOverlay");
+    const list = document.getElementById("pickerList");
+    document.getElementById("pickerTitle").textContent = title;
+    list.innerHTML = "";
+    items.forEach((item, i) => {
+      const btn = document.createElement("button");
+      btn.innerHTML = labelFn(item, i);
+      btn.addEventListener("click", () => {
+        overlay.style.display = "none";
+        resolve(item);
+      });
+      list.appendChild(btn);
+    });
+    document.getElementById("pickerCancel").onclick = () => {
+      overlay.style.display = "none";
+      resolve(null);
+    };
+    overlay.style.display = "flex";
+  });
+}
+</script>
+
+<script type="module">
+// 用字串組合方式產生 esm.sh 網址，避免 "package@版本號" 這種寫法
+// 被部分瀏覽器/網路的隱私過濾器誤判為 email 地址而遭置換、導致載入失敗
+const AT = String.fromCharCode(64); // "@"
+const cdn = (pkg, ver, deps) =>
+  `https://esm.sh/${pkg}${AT}${ver}` + (deps ? `?deps=${deps.map(([p, v]) => `${p}${AT}${v}`).join(",")}` : "");
+
+const V = {
+  state: "6.7.1",
+  view: "6.43.9",
+  language: "6.12.4",
+  commands: "6.11.0",
+  langJs: "6.2.5",
+  theme: "6.1.3",
+  search: "6.7.1"
+};
+
+const [viewMod, stateMod, commandsMod, langJsMod, themeMod, languageMod, searchMod] = await Promise.all([
+  import(cdn("@codemirror/view", V.view, [["@codemirror/state", V.state]])),
+  import(cdn("@codemirror/state", V.state)),
+  import(cdn("@codemirror/commands", V.commands, [["@codemirror/state", V.state], ["@codemirror/view", V.view], ["@codemirror/language", V.language]])),
+  import(cdn("@codemirror/lang-javascript", V.langJs, [["@codemirror/state", V.state], ["@codemirror/view", V.view], ["@codemirror/language", V.language]])),
+  import(cdn("@codemirror/theme-one-dark", V.theme, [["@codemirror/state", V.state], ["@codemirror/view", V.view], ["@codemirror/language", V.language]])),
+  import(cdn("@codemirror/language", V.language, [["@codemirror/state", V.state], ["@codemirror/view", V.view]])),
+  import(cdn("@codemirror/search", V.search, [["@codemirror/state", V.state], ["@codemirror/view", V.view]]))
+]);
+
+const { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } = viewMod;
+const { EditorState, Compartment } = stateMod;
+const { defaultKeymap, history, historyKeymap } = commandsMod;
+const { javascript } = langJsMod;
+const { oneDark } = themeMod;
+const { bracketMatching, foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle, syntaxTree, ensureSyntaxTree } = languageMod;
+const { search, searchKeymap } = searchMod;
+
+// ---------- 狀態 ----------
+let currentScriptId = "";
+let currentFileName = "";
+let currentVersionNumber = null;
+let functionRanges = [];
+let scanTimer;
+
+// ---------- CodeMirror ----------
+const wrapCompartment = new Compartment();
+
+const state = EditorState.create({
+  doc: "// 選擇上方的試算表/專案與檔案後，內容會顯示在這裡",
+  extensions: [
+    lineNumbers(),
+    highlightActiveLine(),
+    highlightActiveLineGutter(),
+    history(),
+    bracketMatching(),
+    foldGutter(),
+    indentOnInput(),
+    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    javascript(),
+    oneDark,
+    search(),
+    wrapCompartment.of(EditorView.lineWrapping),
+    keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+    EditorView.updateListener.of((update) => {
+      if (update.docChanged) {
+        clearTimeout(scanTimer);
+        scanTimer = setTimeout(scanFunctions, 500);
+      }
+    }),
+    EditorView.theme({
+      "&": { fontSize: "14px" },
+      ".cm-content": { padding: "8px 0" },
+      ".cm-gutters": { backgroundColor: "#252526", color: "#6e7681" }
+    })
+  ]
+});
+const view = new EditorView({ state, parent: document.getElementById("editor-container") });
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(() => t.classList.remove("show"), 2000);
+}
+function setStatus(msg) {
+  document.getElementById("statusLine").textContent = msg;
+}
+function setDoc(text) {
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+}
+
+// ---------- 函式區塊掃描 ----------
+function scanFunctions() {
+  const tree = ensureSyntaxTree(view.state, view.state.doc.length, 5000) || syntaxTree(view.state);
+  const results = [];
+  let cursor = tree.topNode.cursor();
+  if (cursor.firstChild()) {
+    do {
+      if (cursor.type.name === "FunctionDeclaration") {
+        const node = cursor.node;
+        const nameNode = node.getChild("VariableDefinition");
+        const name = nameNode ? view.state.doc.sliceString(nameNode.from, nameNode.to) : "(匿名函式)";
+        results.push({ name, from: node.from, to: node.to, startLine: view.state.doc.lineAt(node.from).number });
+      } else if (cursor.type.name === "VariableDeclaration") {
+        const node = cursor.node;
+        const nameNode = node.getChild("VariableDefinition");
+        const funcNode = node.getChild("ArrowFunction") || node.getChild("FunctionExpression");
+        if (nameNode && funcNode) {
+          const name = view.state.doc.sliceString(nameNode.from, nameNode.to);
+          results.push({ name, from: node.from, to: node.to, startLine: view.state.doc.lineAt(node.from).number });
+        }
+      }
+    } while (cursor.nextSibling());
+  }
+  results.sort((a, b) => a.startLine - b.startLine);
+  functionRanges = results;
+
+  const sel = document.getElementById("funcSelect");
+  sel.innerHTML = '<option value="">— 選取函式區塊 —</option>';
+  results.forEach((r, i) => {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = `function ${r.name}()  第 ${r.startLine} 行`;
+    sel.appendChild(opt);
+  });
+  sel.disabled = results.length === 0;
+}
+
+document.getElementById("funcSelect").addEventListener("change", (e) => {
+  const idx = e.target.value;
+  if (idx === "") return;
+  const r = functionRanges[idx];
+  view.dispatch({ selection: { anchor: r.from, head: r.to }, scrollIntoView: true });
+  view.focus();
+  toast(`已選取 ${r.name}() 整個函式，可直接輸入或貼上取代`);
+});
+
+// ---------- google.script.run 包裝（回傳 Promise）----------
+function gsRun(fnName, ...args) {
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler((err) => reject(new Error(err.message || err)))
+      [fnName](...args);
+  });
+}
+
+// ---------- 專案清單 ----------
+async function refreshProjectList() {
+  const list = await gsRun("listRegisteredProjects");
+  const sel = document.getElementById("projectSelect");
+  sel.innerHTML = '<option value="">— 選擇試算表/專案 —</option>';
+  list.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.scriptId;
+    opt.textContent = p.name;
+    sel.appendChild(opt);
+  });
+}
+
+document.getElementById("renameProjectBtn").addEventListener("click", async () => {
+  const sel = document.getElementById("projectSelect");
+  if (!sel.value) { toast("請先選擇一個專案"); return; }
+  const currentName = sel.options[sel.selectedIndex].textContent;
+  const newName = prompt("新名稱", currentName);
+  if (!newName || newName === currentName) return;
+  showLoading(true);
+  try {
+    await gsRun("registerProject", newName, sel.value); // 同一個 scriptId 再次註冊 = 改名
+    const selectedId = sel.value;
+    await refreshProjectList();
+    document.getElementById("projectSelect").value = selectedId;
+    toast("已改名");
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    showLoading(false);
+  }
+});
+
+document.getElementById("deleteProjectBtn").addEventListener("click", async () => {
+  const sel = document.getElementById("projectSelect");
+  if (!sel.value) { toast("請先選擇一個專案"); return; }
+  const name = sel.options[sel.selectedIndex].textContent;
+  if (!confirm(`確定要從清單移除「${name}」嗎？\n（只是移除這支工具裡的登錄，不會刪除你的 GAS 專案本身）`)) return;
+  showLoading(true);
+  try {
+    await gsRun("removeProject", sel.value);
+    if (currentScriptId === sel.value) {
+      currentScriptId = "";
+      document.getElementById("fileSelect").innerHTML = '<option value="">— 選擇檔案 —</option>';
+      document.getElementById("fileSelect").disabled = true;
+    }
+    await refreshProjectList();
+    toast("已移除");
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    showLoading(false);
+  }
+});
+
+document.getElementById("addProjectBtn").addEventListener("click", async () => {
+  const name = prompt("幫這個專案取個名稱（例如：業務時程管理表）");
+  if (!name) return;
+  const url = prompt("貼上該 GAS 專案的完整網址（打開專案後複製網址列），或直接貼 scriptId");
+  if (!url) return;
+  showLoading(true);
+  try {
+    await gsRun("registerProject", name, url);
+    await refreshProjectList();
+    toast("已新增專案");
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    showLoading(false);
+  }
+});
+
+document.getElementById("projectSelect").addEventListener("change", async (e) => {
+  currentScriptId = e.target.value;
+  currentVersionNumber = null;
+  const fileSel = document.getElementById("fileSelect");
+  fileSel.innerHTML = '<option value="">— 選擇檔案 —</option>';
+  fileSel.disabled = true;
+  if (!currentScriptId) return;
+
+  showLoading(true);
+  try {
+    const files = await gsRun("getProjectFiles", currentScriptId);
+    files.forEach((f) => {
+      const opt = document.createElement("option");
+      opt.value = f.name;
+      opt.textContent = f.name + (f.type === "HTML" ? " (.html)" : f.type === "JSON" ? " (manifest)" : " (.gs)");
+      fileSel.appendChild(opt);
+    });
+    fileSel.disabled = false;
+    setStatus("已載入專案，請選擇檔案");
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    showLoading(false);
+  }
+});
+
+document.getElementById("fileSelect").addEventListener("change", async (e) => {
+  currentFileName = e.target.value;
+  if (!currentFileName) return;
+  showLoading(true);
+  try {
+    const content = await gsRun("getFileContent", currentScriptId, currentFileName);
+    setDoc(content);
+    setStatus(`已載入：${currentFileName}`);
+    scanFunctions();
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    showLoading(false);
+  }
+});
+
+// ---------- 存檔 / 版本 / 部署 ----------
+document.getElementById("saveBtn").addEventListener("click", async () => {
+  if (!currentScriptId || !currentFileName) { toast("請先選擇專案與檔案"); return; }
+  showLoading(true);
+  try {
+    await gsRun("saveFileContent", currentScriptId, currentFileName, view.state.doc.toString());
+    toast("💾 已存檔");
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    showLoading(false);
+  }
+});
+
+document.getElementById("versionBtn").addEventListener("click", async () => {
+  if (!currentScriptId) { toast("請先選擇專案"); return; }
+  const desc = prompt("這個版本的說明（可留空）", "");
+  showLoading(true);
+  try {
+    currentVersionNumber = await gsRun("createVersion", currentScriptId, desc);
+    toast(`🏷️ 已建立版本 #${currentVersionNumber}`);
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    showLoading(false);
+  }
+});
+
+document.getElementById("statusBtn").addEventListener("click", async () => {
+  if (!currentScriptId) { toast("請先選擇專案"); return; }
+  showLoading(true);
+  try {
+    const deployments = await gsRun("listDeployments", currentScriptId);
+    if (deployments.length === 0) {
+      alert("這個專案目前沒有任何部署。");
+      return;
+    }
+    const text = deployments.map((d) =>
+      `• ${d.description || "(無說明)"}\n  目前版本：#${d.versionNumber != null ? d.versionNumber : "(未指定版本，通常是尚未正式部署過)"}`
+    ).join("\n\n");
+    alert("部署狀態：\n\n" + text + (currentVersionNumber ? `\n\n（本次工具已建立的最新版本：#${currentVersionNumber}，尚未套用的話上面不會顯示）` : ""));
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    showLoading(false);
+  }
+});
+
+document.getElementById("changeTargetBtn").addEventListener("click", async () => {
+  if (!currentScriptId) { toast("請先選擇專案"); return; }
+  showLoading(true);
+  let deployments;
+  try {
+    deployments = await gsRun("listDeployments", currentScriptId);
+  } catch (err) {
+    showError(err.message);
+    showLoading(false);
+    return;
+  }
+  showLoading(false);
+  if (deployments.length === 0) {
+    showError("這個專案目前沒有任何可更新的部署。");
+    return;
+  }
+  const picked = await showPicker(
+    "選擇要記住的部署目標",
+    deployments,
+    (d) => `${d.description || "(無說明)"} <span class="ver">#${d.versionNumber}</span>`
+  );
+  if (!picked) { toast("已取消"); return; }
+  showLoading(true);
+  try {
+    await gsRun("saveDeploymentTarget", currentScriptId, picked.deploymentId);
+    toast(`已改為記住：${picked.description || "(無說明)"}`);
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    showLoading(false);
+  }
+});
+
+document.getElementById("deployBtn").addEventListener("click", async () => {
+  if (!currentScriptId) { toast("請先選擇專案"); return; }
+  if (!currentVersionNumber) { toast("請先按「建立新版本」，再更新部署"); return; }
+  showLoading(true);
+  try {
+    let deploymentId = await gsRun("getSavedDeploymentTarget", currentScriptId);
+    let currentVer = null;
+
+    if (deploymentId) {
+      const info = await gsRun("getDeploymentInfo", currentScriptId, deploymentId);
+      currentVer = info.versionNumber;
+    } else {
+      const deployments = await gsRun("listDeployments", currentScriptId);
+      showLoading(false);
+      if (deployments.length === 0) {
+        showError("這個專案目前沒有任何可更新的部署，需要先在原生編輯器建立第一次部署。");
+        return;
+      }
+      const picked = await showPicker(
+        "第一次選擇部署目標（選過會記住，之後不用再選）",
+        deployments,
+        (d) => `${d.description || "(無說明)"} <span class="ver">#${d.versionNumber}</span>`
+      );
+      if (!picked) { toast("已取消"); return; }
+      showLoading(true);
+      deploymentId = picked.deploymentId;
+      currentVer = picked.versionNumber;
+      await gsRun("saveDeploymentTarget", currentScriptId, deploymentId);
+    }
+
+    const currentVerLabel = currentVer != null ? "#" + currentVer : "(未知)";
+    showLoading(false);
+    if (!confirm(`目前部署版本：${currentVerLabel}\n將更新為：#${currentVersionNumber}\n確定要更新嗎？`)) return;
+    showLoading(true);
+
+    await gsRun("updateDeployment", currentScriptId, deploymentId, currentVersionNumber, "手機版工具更新");
+    toast(`🚀 部署已更新至版本 #${currentVersionNumber}`);
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    showLoading(false);
+  }
+});
+
+// ---------- 搜尋取代 / 全選 / 貼上 ----------
+document.getElementById("replaceAllBtn").addEventListener("click", () => {
+  const find = document.getElementById("findInput").value;
+  const replace = document.getElementById("replaceInput").value;
+  if (!find) { toast("請輸入搜尋內容"); return; }
+  const doc = view.state.doc.toString();
+  const count = doc.split(find).length - 1;
+  const newDoc = doc.split(find).join(replace);
+  view.dispatch({ changes: { from: 0, to: doc.length, insert: newDoc } });
+  toast(`已取代 ${count} 處`);
+});
+
+document.getElementById("selectAllBtn").addEventListener("click", () => {
+  view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
+  view.focus();
+  toast("已全選");
+});
+
+document.getElementById("pasteBtn").addEventListener("click", async () => {
+  try {
+    const text = await navigator.clipboard.readText();
+    const sel = view.state.selection.main;
+    if (!sel.empty) {
+      view.dispatch({ changes: { from: sel.from, to: sel.to, insert: text } });
+      toast("已貼上，取代選取的範圍");
+    } else {
+      setDoc(text);
+      toast("已貼上覆蓋整份檔案");
+    }
+  } catch (err) {
+    toast("此環境不支援直接讀取剪貼簿，請長按貼上");
+  }
+});
+
+// ---------- 初始化 ----------
+refreshProjectList();
+</script>
+</body>
+</html>
