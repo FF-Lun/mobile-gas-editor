@@ -93,7 +93,7 @@
     <button id="wrapToggle">自動換行:開</button>
   </div>
 
-  <div id="topbar" style="border-top:1px solid #3c3c3c;">
+  <div id="funcbar" style="display:flex; gap:6px; padding:6px 10px; background:#2d2d30; border-bottom:1px solid #3c3c3c; flex-shrink:0;">
     <select id="funcSelect">
       <option value="">— 選取函式區塊 —</option>
     </select>
@@ -124,7 +124,7 @@ import { EditorState } from "https://esm.sh/@codemirror/state@6";
 import { defaultKeymap, history, historyKeymap } from "https://esm.sh/@codemirror/commands@6";
 import { javascript } from "https://esm.sh/@codemirror/lang-javascript@6";
 import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6";
-import { bracketMatching, foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle, syntaxTree } from "https://esm.sh/@codemirror/language@6";
+import { bracketMatching, foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle, syntaxTree, ensureSyntaxTree } from "https://esm.sh/@codemirror/language@6";
 import { search, searchKeymap, replaceAll as cmReplaceAll, setSearchQuery, SearchQuery } from "https://esm.sh/@codemirror/search@6";
 
 const fakeCode = `/**
@@ -208,6 +208,7 @@ const formatCurrency = function(amount) {
 let wrapEnabled = true;
 const wrapCompartment = new (await import("https://esm.sh/@codemirror/state@6")).Compartment();
 
+let scanTimer;
 const state = EditorState.create({
   doc: fakeCode,
   extensions: [
@@ -224,6 +225,12 @@ const state = EditorState.create({
     search(),
     wrapCompartment.of(EditorView.lineWrapping),
     keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+    EditorView.updateListener.of((update) => {
+      if (update.docChanged) {
+        clearTimeout(scanTimer);
+        scanTimer = setTimeout(scanFunctions, 500);
+      }
+    }),
     EditorView.theme({
       "&": { fontSize: "14px" },
       ".cm-content": { padding: "8px 0" },
@@ -299,7 +306,8 @@ document.getElementById("fileSelect").addEventListener("change", () => toast("�
 let functionRanges = [];
 
 function scanFunctions() {
-  const tree = syntaxTree(view.state);
+  // 強制同步解析到文件結尾，避免在背景解析還沒完成時掃描到空結果
+  const tree = ensureSyntaxTree(view.state, view.state.doc.length, 5000) || syntaxTree(view.state);
   const results = [];
   let cursor = tree.topNode.cursor();
   if (cursor.firstChild()) {
@@ -352,12 +360,6 @@ document.getElementById("funcSelect").addEventListener("change", (e) => {
 });
 
 scanFunctions();
-// 每次編輯內容後重新掃描（debounce 避免過於頻繁）
-let scanTimer;
-view.dom.addEventListener("input", () => {
-  clearTimeout(scanTimer);
-  scanTimer = setTimeout(scanFunctions, 800);
-});
 </script>
 </body>
 </html>
